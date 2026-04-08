@@ -1,0 +1,9 @@
+{
+  "slug": "music-video-generator",
+  "title": "Music Video Generator",
+  "category": "creative",
+  "ownerSession": "music-video-generator-session",
+  "launchMode": "local-pwa",
+  "primaryPort": 4301,
+  "projectType": "music-video"
+}

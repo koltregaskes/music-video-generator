@@ -2,11 +2,12 @@
 
 Music Video Generator turns a song, lyric sheet, or creative brief into a structured `creative-project-package-v1` production package.
 
-## What it does
+## What it does now
 
-- captures song metadata and creative direction
-- builds scene lists with timing, shot counts, and visual notes
-- stores prompt packs and reference assets
+- captures song metadata, BPM, key, narrative premise, and audience mood
+- builds structured scenes with section, beat window, location, and camera-energy notes
+- plans nested shots inside each scene
+- stores prompt packs, reference assets, delivery outputs, and working notes
 - exports and imports `creative-project-package-v1` JSON files
 - installs as a lightweight PWA on desktop and Android
 
@@ -61,9 +62,11 @@ Included:
 - song metadata input
 - lyrics/theme input
 - scene list builder
+- nested shot planner
 - shot prompt pack
 - style references
 - edit/timing plan
+- outputs and working-note management
 - export/import support
 
 Not included yet:

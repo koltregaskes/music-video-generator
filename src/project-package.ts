@@ -28,15 +28,30 @@ export type CreativeOutput = {
   target: string
 }
 
+export type MusicVideoShot = {
+  id: string
+  label: string
+  durationSeconds: number
+  cameraMove: string
+  subject: string
+  prompt: string
+  tags: string[]
+}
+
 export type MusicVideoScene = {
   id: string
   title: string
+  section: string
+  beatWindow: string
   summary: string
   durationSeconds: number
   shotCount: number
+  location: string
   visualStyle: string
   performanceFocus: string
+  cameraEnergy: string
   notes: string
+  shots: MusicVideoShot[]
 }
 
 export type CreativeProjectPackageV1 = {
@@ -61,10 +76,16 @@ export type MusicVideoInputs = {
   songTitle: string
   artist: string
   runtimeSeconds: number
+  bpm: number
+  keySignature: string
   lyricsOrTheme: string
+  narrativePremise: string
   visualStyle: string
   aspectRatio: string
   editPlan: string
+  audienceMood: string
+  locations: string[]
+  cast: string[]
 }
 
 export type MusicVideoProjectPackage = Omit<
@@ -84,39 +105,96 @@ export function slugify(value: string) {
     .replace(/^-+|-+$/g, '')
 }
 
+function normalizeList(value: unknown) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item).trim()).filter(Boolean)
+    : []
+}
+
+function createShot(partial?: Partial<MusicVideoShot>): MusicVideoShot {
+  return {
+    id: partial?.id ?? crypto.randomUUID(),
+    label: partial?.label ?? 'New shot',
+    durationSeconds: partial?.durationSeconds ?? 4,
+    cameraMove: partial?.cameraMove ?? '',
+    subject: partial?.subject ?? '',
+    prompt: partial?.prompt ?? '',
+    tags: normalizeList(partial?.tags),
+  }
+}
+
+function createScene(partial?: Partial<MusicVideoScene>): MusicVideoScene {
+  const shots = Array.isArray(partial?.shots) ? partial.shots.map((shot) => createShot(shot)) : []
+
+  return {
+    id: partial?.id ?? crypto.randomUUID(),
+    title: partial?.title ?? 'New scene',
+    section: partial?.section ?? 'Verse',
+    beatWindow: partial?.beatWindow ?? '',
+    summary: partial?.summary ?? '',
+    durationSeconds: partial?.durationSeconds ?? 12,
+    shotCount: partial?.shotCount ?? (shots.length || 3),
+    location: partial?.location ?? '',
+    visualStyle: partial?.visualStyle ?? '',
+    performanceFocus: partial?.performanceFocus ?? '',
+    cameraEnergy: partial?.cameraEnergy ?? '',
+    notes: partial?.notes ?? '',
+    shots,
+  }
+}
+
 export function createMusicVideoProject(
   title: string,
   partial?: Partial<MusicVideoProjectPackage>,
 ): MusicVideoProjectPackage {
   const now = new Date().toISOString()
+  const nextTitle = partial?.title ?? title
+  const inputs: MusicVideoInputs = {
+    songTitle: '',
+    artist: '',
+    runtimeSeconds: 180,
+    bpm: 120,
+    keySignature: '',
+    lyricsOrTheme: '',
+    narrativePremise: '',
+    visualStyle: '',
+    aspectRatio: '16:9',
+    editPlan: '',
+    audienceMood: '',
+    locations: [] as string[],
+    cast: [] as string[],
+    ...(partial?.inputs ?? {}),
+  }
+  inputs.locations = normalizeList(partial?.inputs?.locations)
+  inputs.cast = normalizeList(partial?.inputs?.cast)
+  const scenes = Array.isArray(partial?.scenes)
+    ? partial.scenes.map((scene) => createScene(scene))
+    : []
+  const assets = Array.isArray(partial?.assets) ? partial.assets : []
+  const prompts = Array.isArray(partial?.prompts) ? partial.prompts : []
+  const outputs = Array.isArray(partial?.outputs) ? partial.outputs : []
+  const metrics = partial?.metrics ?? {
+    revisionBudget: 2,
+    targetDeliverables: ['16:9 master', '9:16 teaser'],
+  }
+  const notes = normalizeList(partial?.notes)
+
   return {
     formatVersion: 'creative-project-package-v1',
     projectType: 'music-video',
-    title,
-    slug: slugify(title),
-    summary: '',
-    status: 'draft',
-    createdAt: now,
-    updatedAt: now,
-    inputs: {
-      songTitle: '',
-      artist: '',
-      runtimeSeconds: 180,
-      lyricsOrTheme: '',
-      visualStyle: '',
-      aspectRatio: '16:9',
-      editPlan: '',
-    },
-    scenes: [],
-    assets: [],
-    prompts: [],
-    outputs: [],
-    metrics: {
-      revisionBudget: 2,
-      targetDeliverables: ['teaser', 'full-video', 'vertical-cut'],
-    },
-    notes: [],
-    ...partial,
+    title: nextTitle,
+    slug: partial?.slug ?? slugify(nextTitle),
+    summary: partial?.summary ?? '',
+    status: partial?.status ?? 'draft',
+    createdAt: partial?.createdAt ?? now,
+    updatedAt: partial?.updatedAt ?? now,
+    inputs,
+    scenes,
+    assets,
+    prompts,
+    outputs,
+    metrics,
+    notes,
   }
 }
 
@@ -133,22 +211,6 @@ export function parseProjectPackage(raw: string): MusicVideoProjectPackage {
 
   return createMusicVideoProject(parsed.title ?? 'Imported Music Video Project', {
     ...parsed,
-    inputs: {
-      songTitle: '',
-      artist: '',
-      runtimeSeconds: 0,
-      lyricsOrTheme: '',
-      visualStyle: '',
-      aspectRatio: '16:9',
-      editPlan: '',
-      ...(parsed.inputs ?? {}),
-    },
-    scenes: Array.isArray(parsed.scenes) ? (parsed.scenes as MusicVideoScene[]) : [],
-    assets: Array.isArray(parsed.assets) ? parsed.assets : [],
-    prompts: Array.isArray(parsed.prompts) ? parsed.prompts : [],
-    outputs: Array.isArray(parsed.outputs) ? parsed.outputs : [],
-    notes: Array.isArray(parsed.notes) ? parsed.notes : [],
-    metrics: parsed.metrics ?? {},
   })
 }
 

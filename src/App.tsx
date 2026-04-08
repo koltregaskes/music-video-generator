@@ -4,10 +4,9 @@ import {
   formatMinutes,
   parseProjectPackage,
   slugify,
-  type CreativeAsset,
-  type CreativePrompt,
   type MusicVideoProjectPackage,
   type MusicVideoScene,
+  type MusicVideoShot,
 } from './project-package'
 import { sampleMusicVideoProject } from './sample-project'
 
@@ -40,63 +39,119 @@ function App() {
     persist(updater(project))
   }
 
-  const addScene = () => {
-    updateProject((current) => {
-      const nextSceneNumber = current.scenes.length + 1
-      const scene: MusicVideoScene = {
-        id: crypto.randomUUID(),
-        title: `Scene ${nextSceneNumber}`,
-        summary: 'Describe the visual beat, movement, and mood.',
-        durationSeconds: 12,
-        shotCount: 5,
-        visualStyle: current.inputs.visualStyle,
-        performanceFocus: '',
-        notes: '',
-      }
+  const metrics = useMemo(() => {
+    const runtimeSeconds = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0)
+    const shotCount = project.scenes.reduce((sum, scene) => sum + scene.shots.length, 0)
+    const locations = new Set(
+      project.scenes
+        .map((scene) => scene.location.trim())
+        .concat(project.inputs.locations)
+        .filter(Boolean),
+    )
 
-      return {
-        ...current,
-        scenes: [...current.scenes, scene],
-        updatedAt: new Date().toISOString(),
-      }
-    })
+    return {
+      runtimeSeconds,
+      shotCount,
+      locations: locations.size,
+      deliverables: project.outputs.length,
+    }
+  }, [project])
+
+  const addScene = () => {
+    updateProject((current) => ({
+      ...current,
+      scenes: [
+        ...current.scenes,
+        {
+          id: crypto.randomUUID(),
+          title: `Scene ${current.scenes.length + 1}`,
+          section: 'Verse',
+          beatWindow: '',
+          summary: 'Describe the emotional beat, blocking, and visual turn here.',
+          durationSeconds: 12,
+          shotCount: 1,
+          location: '',
+          visualStyle: current.inputs.visualStyle,
+          performanceFocus: '',
+          cameraEnergy: 'Medium',
+          notes: '',
+          shots: [
+            {
+              id: crypto.randomUUID(),
+              label: 'Anchor shot',
+              durationSeconds: 4,
+              cameraMove: '',
+              subject: '',
+              prompt: '',
+              tags: [],
+            },
+          ],
+        },
+      ],
+      updatedAt: new Date().toISOString(),
+    }))
+  }
+
+  const addShot = (sceneId: string) => {
+    updateProject((current) => ({
+      ...current,
+      scenes: current.scenes.map((scene) =>
+        scene.id === sceneId
+          ? {
+              ...scene,
+              shots: [
+                ...scene.shots,
+                {
+                  id: crypto.randomUUID(),
+                  label: `Shot ${scene.shots.length + 1}`,
+                  durationSeconds: 4,
+                  cameraMove: '',
+                  subject: '',
+                  prompt: '',
+                  tags: [],
+                },
+              ],
+              shotCount: scene.shots.length + 1,
+            }
+          : scene,
+      ),
+      updatedAt: new Date().toISOString(),
+    }))
   }
 
   const addPrompt = () => {
-    updateProject((current) => {
-      const prompt: CreativePrompt = {
-        id: crypto.randomUUID(),
-        label: `Prompt ${current.prompts.length + 1}`,
-        prompt:
-          'Write the exact visual prompt here, including lens, lighting, camera motion, palette, and continuity notes.',
-        tags: ['shot', 'visual-style'],
-      }
-
-      return {
-        ...current,
-        prompts: [...current.prompts, prompt],
-        updatedAt: new Date().toISOString(),
-      }
-    })
+    updateProject((current) => ({
+      ...current,
+      prompts: [
+        ...current.prompts,
+        {
+          id: crypto.randomUUID(),
+          label: `Prompt ${current.prompts.length + 1}`,
+          prompt:
+            'Write the exact visual prompt here, including lens, lighting, camera motion, palette, and continuity notes.',
+          tags: ['visual-style'],
+        },
+      ],
+      updatedAt: new Date().toISOString(),
+    }))
   }
 
   const addAsset = () => {
-    updateProject((current) => {
-      const asset: CreativeAsset = {
-        id: crypto.randomUUID(),
-        label: `Asset ${current.assets.length + 1}`,
-        type: 'reference',
-        source: 'Reference board',
-        status: 'planned',
-        notes: 'Add the shot board, style frame, or reference clip you need.',
-      }
-
-      return {
-        ...current,
-        assets: [...current.assets, asset],
-        updatedAt: new Date().toISOString(),
-      }
-    })
+    updateProject((current) => ({
+      ...current,
+      assets: [
+        ...current.assets,
+        {
+          id: crypto.randomUUID(),
+          label: `Asset ${current.assets.length + 1}`,
+          type: 'reference',
+          source: 'Reference board',
+          status: 'planned',
+          notes: 'Add the shot board, style frame, or reference clip you need.',
+        },
+      ],
+      updatedAt: new Date().toISOString(),
+    }))
   }
 
   const addOutput = () => {
@@ -113,10 +168,6 @@ function App() {
       ],
       updatedAt: new Date().toISOString(),
     }))
-  }
-
-  const handleExport = () => {
-    exportProjectPackage(project)
   }
 
   const handleImportClick = () => {
@@ -142,31 +193,18 @@ function App() {
     }
   }
 
-  const metrics = useMemo(() => {
-    const runtimeSeconds = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0)
-    const shotCount = project.scenes.reduce((sum, scene) => sum + scene.shotCount, 0)
-    const revisionBudget = Number(project.metrics.revisionBudget ?? 0)
-
-    return {
-      runtimeSeconds,
-      shotCount,
-      revisionBudget,
-      assetCount: project.assets.length,
-    }
-  }, [project])
-
   return (
     <div className="app-shell">
       <header className="hero">
         <div className="hero-copy">
-          <span className="eyebrow">Creative Package Studio</span>
+          <span className="eyebrow">Editorial Music Video Planner</span>
           <h1>Music Video Generator</h1>
           <p>
-            Turn a track, theme, or lyric sheet into a structured production package with
-            scenes, prompts, style references, asset plans, and exportable creative metadata.
+            Shape a song into a full production package with scene architecture, shot prompts,
+            moodboards, release outputs, and a clean export the rest of the creative stack can use.
           </p>
           <div className="hero-actions">
-            <button onClick={handleExport}>Export Package</button>
+            <button onClick={() => exportProjectPackage(project)}>Export Package</button>
             <button className="secondary" onClick={handleImportClick}>
               Import Package
             </button>
@@ -186,8 +224,12 @@ function App() {
           <MetricCard label="Scenes" value={String(project.scenes.length)} />
           <MetricCard label="Runtime" value={formatMinutes(metrics.runtimeSeconds)} />
           <MetricCard label="Shot Beats" value={String(metrics.shotCount)} />
-          <MetricCard label="Assets" value={String(metrics.assetCount)} />
-          <MetricCard label="Revision Budget" value={String(metrics.revisionBudget)} />
+          <MetricCard label="Locations" value={String(metrics.locations)} />
+          <MetricCard label="Deliverables" value={String(metrics.deliverables)} />
+          <MetricCard
+            label="BPM / Key"
+            value={`${project.inputs.bpm} / ${project.inputs.keySignature || 'TBD'}`}
+          />
         </div>
       </header>
 
@@ -195,12 +237,12 @@ function App() {
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <span className="panel-kicker">Project</span>
-              <h2>Song and brief</h2>
+              <span className="panel-kicker">Brief</span>
+              <h2>Song and creative direction</h2>
             </div>
           </div>
           <div className="field-grid">
-            <LabeledInput
+            <Field
               label="Project title"
               value={project.title}
               onChange={(value) =>
@@ -212,7 +254,7 @@ function App() {
                 }))
               }
             />
-            <LabeledInput
+            <Field
               label="Song title"
               value={project.inputs.songTitle}
               onChange={(value) =>
@@ -223,7 +265,7 @@ function App() {
                 }))
               }
             />
-            <LabeledInput
+            <Field
               label="Artist"
               value={project.inputs.artist}
               onChange={(value) =>
@@ -234,23 +276,43 @@ function App() {
                 }))
               }
             />
-            <LabeledInput
-              label="Target runtime (seconds)"
+            <Field
+              label="Runtime (seconds)"
               value={String(project.inputs.runtimeSeconds)}
+              type="number"
               onChange={(value) =>
                 updateProject((current) => ({
                   ...current,
-                  inputs: {
-                    ...current.inputs,
-                    runtimeSeconds: Number(value) || 0,
-                  },
+                  inputs: { ...current.inputs, runtimeSeconds: Number(value) || 0 },
                   updatedAt: new Date().toISOString(),
                 }))
               }
+            />
+            <Field
+              label="BPM"
+              value={String(project.inputs.bpm)}
               type="number"
+              onChange={(value) =>
+                updateProject((current) => ({
+                  ...current,
+                  inputs: { ...current.inputs, bpm: Number(value) || 0 },
+                  updatedAt: new Date().toISOString(),
+                }))
+              }
+            />
+            <Field
+              label="Key signature"
+              value={project.inputs.keySignature}
+              onChange={(value) =>
+                updateProject((current) => ({
+                  ...current,
+                  inputs: { ...current.inputs, keySignature: value },
+                  updatedAt: new Date().toISOString(),
+                }))
+              }
             />
           </div>
-          <LabeledTextarea
+          <TextArea
             label="Creative summary"
             value={project.summary}
             onChange={(value) =>
@@ -261,7 +323,7 @@ function App() {
               }))
             }
           />
-          <LabeledTextarea
+          <TextArea
             label="Lyrics or theme"
             value={project.inputs.lyricsOrTheme}
             onChange={(value) =>
@@ -272,31 +334,59 @@ function App() {
               }))
             }
           />
+          <TextArea
+            label="Narrative premise"
+            value={project.inputs.narrativePremise}
+            onChange={(value) =>
+              updateProject((current) => ({
+                ...current,
+                inputs: { ...current.inputs, narrativePremise: value },
+                updatedAt: new Date().toISOString(),
+              }))
+            }
+          />
           <div className="field-grid">
-            <LabeledInput
-              label="Visual style"
-              value={project.inputs.visualStyle}
+            <TextArea
+              label="Locations"
+              value={project.inputs.locations.join('\n')}
               onChange={(value) =>
                 updateProject((current) => ({
                   ...current,
-                  inputs: { ...current.inputs, visualStyle: value },
+                  inputs: {
+                    ...current.inputs,
+                    locations: splitLines(value),
+                  },
                   updatedAt: new Date().toISOString(),
                 }))
               }
             />
-            <LabeledInput
-              label="Primary ratio"
-              value={project.inputs.aspectRatio}
+            <TextArea
+              label="Cast and performance setup"
+              value={project.inputs.cast.join('\n')}
               onChange={(value) =>
                 updateProject((current) => ({
                   ...current,
-                  inputs: { ...current.inputs, aspectRatio: value },
+                  inputs: {
+                    ...current.inputs,
+                    cast: splitLines(value),
+                  },
                   updatedAt: new Date().toISOString(),
                 }))
               }
             />
           </div>
-          <LabeledTextarea
+          <TextArea
+            label="Visual style"
+            value={project.inputs.visualStyle}
+            onChange={(value) =>
+              updateProject((current) => ({
+                ...current,
+                inputs: { ...current.inputs, visualStyle: value },
+                updatedAt: new Date().toISOString(),
+              }))
+            }
+          />
+          <TextArea
             label="Edit and timing plan"
             value={project.inputs.editPlan}
             onChange={(value) =>
@@ -307,27 +397,13 @@ function App() {
               }))
             }
           />
-          <LabeledTextarea
-            label="Working notes"
-            value={project.notes.join('\n')}
-            onChange={(value) =>
-              updateProject((current) => ({
-                ...current,
-                notes: value
-                  .split('\n')
-                  .map((line) => line.trim())
-                  .filter(Boolean),
-                updatedAt: new Date().toISOString(),
-              }))
-            }
-          />
         </section>
 
-        <section className="panel">
+        <section className="panel panel-full">
           <div className="panel-heading">
             <div>
-              <span className="panel-kicker">Structure</span>
-              <h2>Scene list builder</h2>
+              <span className="panel-kicker">Scene Architecture</span>
+              <h2>Build the storyboard spine</h2>
             </div>
             <button className="secondary" onClick={addScene}>
               Add Scene
@@ -335,122 +411,21 @@ function App() {
           </div>
           <div className="stack-list">
             {project.scenes.map((scene, index) => (
-              <article className="stack-card" key={scene.id}>
-                <div className="stack-header">
-                  <strong>{scene.title}</strong>
-                  <button
-                    className="ghost tiny"
-                    onClick={() =>
-                      updateProject((current) => ({
-                        ...current,
-                        scenes: current.scenes.filter((item) => item.id !== scene.id),
-                        updatedAt: new Date().toISOString(),
-                      }))
-                    }
-                  >
-                    Remove
-                  </button>
-                </div>
-                <div className="field-grid">
-                  <LabeledInput
-                    label="Scene title"
-                    value={scene.title}
-                    onChange={(value) =>
-                      updateProject((current) => ({
-                        ...current,
-                        scenes: current.scenes.map((item, itemIndex) =>
-                          itemIndex === index ? { ...item, title: value } : item,
-                        ),
-                        updatedAt: new Date().toISOString(),
-                      }))
-                    }
-                  />
-                  <LabeledInput
-                    label="Duration"
-                    value={String(scene.durationSeconds)}
-                    type="number"
-                    onChange={(value) =>
-                      updateProject((current) => ({
-                        ...current,
-                        scenes: current.scenes.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? { ...item, durationSeconds: Number(value) || 0 }
-                            : item,
-                        ),
-                        updatedAt: new Date().toISOString(),
-                      }))
-                    }
-                  />
-                  <LabeledInput
-                    label="Shot count"
-                    value={String(scene.shotCount)}
-                    type="number"
-                    onChange={(value) =>
-                      updateProject((current) => ({
-                        ...current,
-                        scenes: current.scenes.map((item, itemIndex) =>
-                          itemIndex === index ? { ...item, shotCount: Number(value) || 0 } : item,
-                        ),
-                        updatedAt: new Date().toISOString(),
-                      }))
-                    }
-                  />
-                  <LabeledInput
-                    label="Performance focus"
-                    value={scene.performanceFocus}
-                    onChange={(value) =>
-                      updateProject((current) => ({
-                        ...current,
-                        scenes: current.scenes.map((item, itemIndex) =>
-                          itemIndex === index ? { ...item, performanceFocus: value } : item,
-                        ),
-                        updatedAt: new Date().toISOString(),
-                      }))
-                    }
-                  />
-                </div>
-                <LabeledTextarea
-                  label="Scene summary"
-                  value={scene.summary}
-                  onChange={(value) =>
-                    updateProject((current) => ({
-                      ...current,
-                      scenes: current.scenes.map((item, itemIndex) =>
-                        itemIndex === index ? { ...item, summary: value } : item,
-                      ),
-                      updatedAt: new Date().toISOString(),
-                    }))
-                  }
-                />
-                <div className="field-grid">
-                  <LabeledInput
-                    label="Visual style reference"
-                    value={scene.visualStyle}
-                    onChange={(value) =>
-                      updateProject((current) => ({
-                        ...current,
-                        scenes: current.scenes.map((item, itemIndex) =>
-                          itemIndex === index ? { ...item, visualStyle: value } : item,
-                        ),
-                        updatedAt: new Date().toISOString(),
-                      }))
-                    }
-                  />
-                  <LabeledInput
-                    label="Scene notes"
-                    value={scene.notes}
-                    onChange={(value) =>
-                      updateProject((current) => ({
-                        ...current,
-                        scenes: current.scenes.map((item, itemIndex) =>
-                          itemIndex === index ? { ...item, notes: value } : item,
-                        ),
-                        updatedAt: new Date().toISOString(),
-                      }))
-                    }
-                  />
-                </div>
-              </article>
+              <SceneEditor
+                key={scene.id}
+                scene={scene}
+                sceneIndex={index}
+                onChange={(patch) => updateScene(project, scene.id, persist, patch)}
+                onRemove={() =>
+                  updateProject((current) => ({
+                    ...current,
+                    scenes: current.scenes.filter((item) => item.id !== scene.id),
+                    updatedAt: new Date().toISOString(),
+                  }))
+                }
+                onAddShot={() => addShot(scene.id)}
+                onUpdateShot={(shotId, patch) => updateShot(project, scene.id, shotId, persist, patch)}
+              />
             ))}
           </div>
         </section>
@@ -459,17 +434,37 @@ function App() {
           <div className="panel-heading">
             <div>
               <span className="panel-kicker">Prompt Pack</span>
-              <h2>Visual prompts and references</h2>
+              <h2>Master prompts and reference assets</h2>
             </div>
-            <button className="secondary" onClick={addPrompt}>
-              Add Prompt
-            </button>
+            <div className="inline-actions">
+              <button className="secondary" onClick={addPrompt}>
+                Add Prompt
+              </button>
+              <button className="secondary" onClick={addAsset}>
+                Add Asset
+              </button>
+            </div>
           </div>
           <div className="stack-list">
             {project.prompts.map((prompt, index) => (
               <article className="stack-card" key={prompt.id}>
+                <div className="stack-header compact">
+                  <strong>{prompt.label}</strong>
+                  <button
+                    className="ghost tiny"
+                    onClick={() =>
+                      updateProject((current) => ({
+                        ...current,
+                        prompts: current.prompts.filter((item) => item.id !== prompt.id),
+                        updatedAt: new Date().toISOString(),
+                      }))
+                    }
+                  >
+                    Remove
+                  </button>
+                </div>
                 <div className="field-grid">
-                  <LabeledInput
+                  <Field
                     label="Label"
                     value={prompt.label}
                     onChange={(value) =>
@@ -482,29 +477,21 @@ function App() {
                       }))
                     }
                   />
-                  <LabeledInput
+                  <Field
                     label="Tags"
                     value={prompt.tags.join(', ')}
                     onChange={(value) =>
                       updateProject((current) => ({
                         ...current,
                         prompts: current.prompts.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? {
-                                ...item,
-                                tags: value
-                                  .split(',')
-                                  .map((entry) => entry.trim())
-                                  .filter(Boolean),
-                              }
-                            : item,
+                          itemIndex === index ? { ...item, tags: splitCommaList(value) } : item,
                         ),
                         updatedAt: new Date().toISOString(),
                       }))
                     }
                   />
                 </div>
-                <LabeledTextarea
+                <TextArea
                   label="Prompt"
                   value={prompt.prompt}
                   onChange={(value) =>
@@ -519,25 +506,26 @@ function App() {
                 />
               </article>
             ))}
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <span className="panel-kicker">Assets</span>
-              <h2>Reference boards and deliverables</h2>
-            </div>
-            <button className="secondary" onClick={addAsset}>
-              Add Asset
-            </button>
-          </div>
-          <div className="stack-list">
             {project.assets.map((asset, index) => (
               <article className="stack-card" key={asset.id}>
+                <div className="stack-header compact">
+                  <strong>{asset.label}</strong>
+                  <button
+                    className="ghost tiny"
+                    onClick={() =>
+                      updateProject((current) => ({
+                        ...current,
+                        assets: current.assets.filter((item) => item.id !== asset.id),
+                        updatedAt: new Date().toISOString(),
+                      }))
+                    }
+                  >
+                    Remove
+                  </button>
+                </div>
                 <div className="field-grid">
-                  <LabeledInput
-                    label="Asset label"
+                  <Field
+                    label="Label"
                     value={asset.label}
                     onChange={(value) =>
                       updateProject((current) => ({
@@ -549,7 +537,7 @@ function App() {
                       }))
                     }
                   />
-                  <LabeledInput
+                  <Field
                     label="Type"
                     value={asset.type}
                     onChange={(value) =>
@@ -562,7 +550,9 @@ function App() {
                       }))
                     }
                   />
-                  <LabeledInput
+                </div>
+                <div className="field-grid">
+                  <Field
                     label="Source"
                     value={asset.source}
                     onChange={(value) =>
@@ -575,7 +565,7 @@ function App() {
                       }))
                     }
                   />
-                  <LabeledInput
+                  <Field
                     label="Status"
                     value={asset.status}
                     onChange={(value) =>
@@ -589,7 +579,7 @@ function App() {
                     }
                   />
                 </div>
-                <LabeledTextarea
+                <TextArea
                   label="Notes"
                   value={asset.notes}
                   onChange={(value) =>
@@ -610,8 +600,8 @@ function App() {
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <span className="panel-kicker">Release Plan</span>
-              <h2>Outputs and deliverables</h2>
+              <span className="panel-kicker">Delivery</span>
+              <h2>Release outputs and notes</h2>
             </div>
             <button className="secondary" onClick={addOutput}>
               Add Output
@@ -620,7 +610,7 @@ function App() {
           <div className="stack-list">
             {project.outputs.map((output, index) => (
               <article className="stack-card" key={output.id}>
-                <div className="stack-header">
+                <div className="stack-header compact">
                   <strong>{output.label}</strong>
                   <button
                     className="ghost tiny"
@@ -636,7 +626,7 @@ function App() {
                   </button>
                 </div>
                 <div className="field-grid">
-                  <LabeledInput
+                  <Field
                     label="Label"
                     value={output.label}
                     onChange={(value) =>
@@ -649,7 +639,7 @@ function App() {
                       }))
                     }
                   />
-                  <LabeledInput
+                  <Field
                     label="Status"
                     value={output.status}
                     onChange={(value) =>
@@ -663,7 +653,7 @@ function App() {
                     }
                   />
                 </div>
-                <LabeledInput
+                <Field
                   label="Target"
                   value={output.target}
                   onChange={(value) =>
@@ -679,6 +669,17 @@ function App() {
               </article>
             ))}
           </div>
+          <TextArea
+            label="Working notes"
+            value={project.notes.join('\n')}
+            onChange={(value) =>
+              updateProject((current) => ({
+                ...current,
+                notes: splitLines(value),
+                updatedAt: new Date().toISOString(),
+              }))
+            }
+          />
         </section>
       </main>
 
@@ -693,10 +694,170 @@ function App() {
   )
 }
 
-type MetricCardProps = {
-  label: string
-  value: string
+type SceneEditorProps = {
+  scene: MusicVideoScene
+  sceneIndex: number
+  onChange: (patch: Partial<MusicVideoScene>) => void
+  onRemove: () => void
+  onAddShot: () => void
+  onUpdateShot: (shotId: string, patch: Partial<MusicVideoShot>) => void
 }
+
+function SceneEditor({
+  scene,
+  sceneIndex,
+  onChange,
+  onRemove,
+  onAddShot,
+  onUpdateShot,
+}: SceneEditorProps) {
+  return (
+    <article className="stack-card cinematic-card">
+      <div className="stack-header">
+        <div>
+          <strong>{scene.title}</strong>
+          <p className="card-caption">
+            Scene {sceneIndex + 1} {scene.section ? `• ${scene.section}` : ''}
+          </p>
+        </div>
+        <div className="inline-actions">
+          <button className="secondary tiny" onClick={onAddShot}>
+            Add Shot
+          </button>
+          <button className="ghost tiny" onClick={onRemove}>
+            Remove Scene
+          </button>
+        </div>
+      </div>
+      <div className="field-grid three-up">
+        <Field label="Scene title" value={scene.title} onChange={(value) => onChange({ title: value })} />
+        <Field label="Section" value={scene.section} onChange={(value) => onChange({ section: value })} />
+        <Field
+          label="Beat window"
+          value={scene.beatWindow}
+          onChange={(value) => onChange({ beatWindow: value })}
+        />
+        <Field
+          label="Duration"
+          value={String(scene.durationSeconds)}
+          type="number"
+          onChange={(value) => onChange({ durationSeconds: Number(value) || 0 })}
+        />
+        <Field label="Location" value={scene.location} onChange={(value) => onChange({ location: value })} />
+        <Field
+          label="Camera energy"
+          value={scene.cameraEnergy}
+          onChange={(value) => onChange({ cameraEnergy: value })}
+        />
+      </div>
+      <TextArea label="Scene summary" value={scene.summary} onChange={(value) => onChange({ summary: value })} />
+      <div className="field-grid">
+        <TextArea
+          label="Performance focus"
+          value={scene.performanceFocus}
+          onChange={(value) => onChange({ performanceFocus: value })}
+        />
+        <TextArea
+          label="Visual style"
+          value={scene.visualStyle}
+          onChange={(value) => onChange({ visualStyle: value })}
+        />
+      </div>
+      <TextArea label="Production notes" value={scene.notes} onChange={(value) => onChange({ notes: value })} />
+      <div className="subsection-heading">
+        <span>Shot plan</span>
+        <strong>{scene.shots.length} planned shots</strong>
+      </div>
+      <div className="shot-grid">
+        {scene.shots.map((shot) => (
+          <div className="shot-card" key={shot.id}>
+            <div className="field-grid">
+              <Field label="Shot label" value={shot.label} onChange={(value) => onUpdateShot(shot.id, { label: value })} />
+              <Field
+                label="Duration"
+                value={String(shot.durationSeconds)}
+                type="number"
+                onChange={(value) => onUpdateShot(shot.id, { durationSeconds: Number(value) || 0 })}
+              />
+            </div>
+            <div className="field-grid">
+              <Field
+                label="Camera move"
+                value={shot.cameraMove}
+                onChange={(value) => onUpdateShot(shot.id, { cameraMove: value })}
+              />
+              <Field label="Subject" value={shot.subject} onChange={(value) => onUpdateShot(shot.id, { subject: value })} />
+            </div>
+            <TextArea label="Prompt" value={shot.prompt} onChange={(value) => onUpdateShot(shot.id, { prompt: value })} />
+            <Field
+              label="Tags"
+              value={shot.tags.join(', ')}
+              onChange={(value) => onUpdateShot(shot.id, { tags: splitCommaList(value) })}
+            />
+          </div>
+        ))}
+      </div>
+    </article>
+  )
+}
+
+function updateScene(
+  project: MusicVideoProjectPackage,
+  sceneId: string,
+  persist: (project: MusicVideoProjectPackage) => void,
+  patch: Partial<MusicVideoScene>,
+) {
+  persist({
+    ...project,
+    scenes: project.scenes.map((scene) => {
+      if (scene.id !== sceneId) {
+        return scene
+      }
+
+      const nextScene = { ...scene, ...patch }
+      return { ...nextScene, shotCount: nextScene.shots.length }
+    }),
+    updatedAt: new Date().toISOString(),
+  })
+}
+
+function updateShot(
+  project: MusicVideoProjectPackage,
+  sceneId: string,
+  shotId: string,
+  persist: (project: MusicVideoProjectPackage) => void,
+  patch: Partial<MusicVideoShot>,
+) {
+  persist({
+    ...project,
+    scenes: project.scenes.map((scene) =>
+      scene.id === sceneId
+        ? {
+            ...scene,
+            shots: scene.shots.map((shot) => (shot.id === shotId ? { ...shot, ...patch } : shot)),
+            shotCount: scene.shots.length,
+          }
+        : scene,
+    ),
+    updatedAt: new Date().toISOString(),
+  })
+}
+
+function splitLines(value: string) {
+  return value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+function splitCommaList(value: string) {
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+}
+
+type MetricCardProps = { label: string; value: string }
 
 function MetricCard({ label, value }: MetricCardProps) {
   return (
@@ -707,14 +868,14 @@ function MetricCard({ label, value }: MetricCardProps) {
   )
 }
 
-type LabeledInputProps = {
+type FieldProps = {
   label: string
   value: string
   onChange: (value: string) => void
   type?: 'text' | 'number'
 }
 
-function LabeledInput({ label, value, onChange, type = 'text' }: LabeledInputProps) {
+function Field({ label, value, onChange, type = 'text' }: FieldProps) {
   return (
     <label className="field">
       <span>{label}</span>
@@ -723,17 +884,17 @@ function LabeledInput({ label, value, onChange, type = 'text' }: LabeledInputPro
   )
 }
 
-type LabeledTextareaProps = {
+type TextAreaProps = {
   label: string
   value: string
   onChange: (value: string) => void
 }
 
-function LabeledTextarea({ label, value, onChange }: LabeledTextareaProps) {
+function TextArea({ label, value, onChange }: TextAreaProps) {
   return (
     <label className="field field-textarea">
       <span>{label}</span>
-      <textarea value={value} onChange={(event) => onChange(event.target.value)} rows={5} />
+      <textarea rows={5} value={value} onChange={(event) => onChange(event.target.value)} />
     </label>
   )
 }

@@ -12,6 +12,29 @@ import { sampleMusicVideoProject } from './sample-project'
 
 const STORAGE_KEY = 'music-video-generator.project'
 
+type CueSheetShot = MusicVideoShot & {
+  startSeconds: number
+  endSeconds: number
+}
+
+type CueSheetScene = MusicVideoScene & {
+  startSeconds: number
+  endSeconds: number
+  shotDurationSeconds: number
+  shotWindowLabel: string
+  timingDeltaSeconds: number
+  cueShots: CueSheetShot[]
+}
+
+type CueSheet = {
+  scenes: CueSheetScene[]
+  plannedRuntimeSeconds: number
+  targetRuntimeSeconds: number
+  totalShotCount: number
+  text: string
+  summary: string
+}
+
 function App() {
   const [project, setProject] = useState<MusicVideoProjectPackage>(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY)
@@ -56,6 +79,8 @@ function App() {
       deliverables: project.outputs.length,
     }
   }, [project])
+
+  const cueSheet = useMemo(() => buildCueSheet(project), [project])
 
   const addScene = () => {
     updateProject((current) => ({
@@ -175,9 +200,22 @@ function App() {
   }
 
   const handleCopy = async () => {
+    const text = JSON.stringify(project, null, 2)
+
     try {
-      await navigator.clipboard.writeText(JSON.stringify(project, null, 2))
+      await copyTextToClipboard(text)
       setImportMessage('Copied package JSON')
+    } catch (error) {
+      setImportMessage(
+        error instanceof Error ? error.message : 'Copy failed. Check browser clipboard permissions.',
+      )
+    }
+  }
+
+  const handleCopyCueSheet = async () => {
+    try {
+      await copyTextToClipboard(cueSheet.text)
+      setImportMessage('Copied cue sheet')
     } catch (error) {
       setImportMessage(
         error instanceof Error ? error.message : 'Copy failed. Check browser clipboard permissions.',
@@ -246,6 +284,86 @@ function App() {
           />
         </div>
       </header>
+
+      <section className="panel cue-sheet-panel">
+        <div className="panel-heading">
+          <div>
+            <span className="panel-kicker">Cue Sheet</span>
+            <h2>Delivery-ready timing and shot summary</h2>
+            <p className="panel-note">
+              A compact handoff view with cumulative timing, scene order, and shot ranges you can
+              paste straight into an editor brief or review note.
+            </p>
+          </div>
+          <div className="inline-actions">
+            <button className="secondary" onClick={handleCopyCueSheet}>
+              Copy Cue Sheet
+            </button>
+          </div>
+        </div>
+        <div className="cue-stats">
+          <MetricCard label="Planned runtime" value={formatMinutes(cueSheet.plannedRuntimeSeconds)} />
+          <MetricCard label="Target runtime" value={formatMinutes(cueSheet.targetRuntimeSeconds)} />
+          <MetricCard label="Scenes" value={String(cueSheet.scenes.length)} />
+          <MetricCard label="Shots" value={String(cueSheet.totalShotCount)} />
+        </div>
+        <p className="cue-summary">{cueSheet.summary}</p>
+        <div className="cue-sheet-list">
+          {cueSheet.scenes.map((scene, index) => (
+            <article className="cue-sheet-card" key={scene.id}>
+              <div className="cue-sheet-card__head">
+                <div>
+                  <p className="cue-sheet-card__range">
+                    {formatMinutes(scene.startSeconds)} - {formatMinutes(scene.endSeconds)}
+                  </p>
+                  <h3>
+                    Scene {index + 1}: {scene.title}
+                  </h3>
+                  <p className="cue-sheet-card__meta">
+                    {scene.section}
+                    {scene.location ? ` · ${scene.location}` : ''}
+                    {scene.cameraEnergy ? ` · ${scene.cameraEnergy}` : ''}
+                  </p>
+                </div>
+                <div className="cue-sheet-card__timing">
+                  <span>{formatMinutes(scene.durationSeconds)} scene</span>
+                  <span>{formatMinutes(scene.shotDurationSeconds)} shots</span>
+                  {scene.timingDeltaSeconds !== 0 ? (
+                    <span className={scene.timingDeltaSeconds > 0 ? 'cue-delta cue-delta--long' : 'cue-delta cue-delta--short'}>
+                      {scene.timingDeltaSeconds > 0 ? '+' : ''}
+                      {formatMinutes(Math.abs(scene.timingDeltaSeconds))} timing delta
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <p className="cue-sheet-card__summary">{scene.summary}</p>
+              <div className="cue-shot-list">
+                {scene.cueShots.map((shot, shotIndex) => (
+                  <div className="cue-shot-row" key={shot.id}>
+                    <div className="cue-shot-row__time">
+                      <span>Shot {shotIndex + 1}</span>
+                      <strong>
+                        {formatMinutes(shot.startSeconds)} - {formatMinutes(shot.endSeconds)}
+                      </strong>
+                    </div>
+                    <div className="cue-shot-row__body">
+                      <strong>{shot.label}</strong>
+                      <p>
+                        {shot.subject || 'Subject TBD'}
+                        {shot.cameraMove ? ` · ${shot.cameraMove}` : ''}
+                      </p>
+                      {shot.prompt ? <p className="cue-shot-row__prompt">{shot.prompt}</p> : null}
+                      {shot.tags.length > 0 ? (
+                        <p className="cue-shot-row__tags">{shot.tags.join(' · ')}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <main className="workspace-grid">
         <section className="panel">
@@ -706,6 +824,119 @@ function App() {
       />
     </div>
   )
+}
+
+function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text)
+  }
+
+  const helper = document.createElement('textarea')
+  helper.value = text
+  helper.setAttribute('readonly', 'readonly')
+  helper.style.position = 'fixed'
+  helper.style.left = '-9999px'
+  helper.style.top = '0'
+  document.body.appendChild(helper)
+  helper.select()
+
+  const copied = document.execCommand('copy')
+  document.body.removeChild(helper)
+
+  if (!copied) {
+    throw new Error('Clipboard copy failed.')
+  }
+
+  return Promise.resolve()
+}
+
+function buildCueSheet(project: MusicVideoProjectPackage): CueSheet {
+  let timelineCursor = 0
+  let totalShotCount = 0
+
+  const scenes = project.scenes.map((scene) => {
+    const sceneShotDurationSeconds = scene.shots.reduce(
+      (sum, shot) => sum + Math.max(shot.durationSeconds || 0, 0),
+      0,
+    )
+    const sceneDurationSeconds = Math.max(scene.durationSeconds || 0, sceneShotDurationSeconds)
+    const cueShots: CueSheetShot[] = []
+    let shotCursor = timelineCursor
+
+    scene.shots.forEach((shot) => {
+      const shotDuration = Math.max(shot.durationSeconds || 0, 1)
+      const shotStart = shotCursor
+      const shotEnd = shotStart + shotDuration
+
+      cueShots.push({
+        ...shot,
+        durationSeconds: shotDuration,
+        startSeconds: shotStart,
+        endSeconds: shotEnd,
+      })
+
+      shotCursor = shotEnd
+      totalShotCount += 1
+    })
+
+    const sceneEnd = Math.max(timelineCursor + sceneDurationSeconds, shotCursor)
+    const timingDeltaSeconds = sceneDurationSeconds - sceneShotDurationSeconds
+
+    const cueScene: CueSheetScene = {
+      ...scene,
+      durationSeconds: sceneDurationSeconds,
+      shotDurationSeconds: sceneShotDurationSeconds,
+      shotWindowLabel:
+        cueShots.length > 0
+          ? `${formatMinutes(cueShots[0].startSeconds)} - ${formatMinutes(cueShots[cueShots.length - 1].endSeconds)}`
+          : formatMinutes(sceneDurationSeconds),
+      timingDeltaSeconds,
+      startSeconds: timelineCursor,
+      endSeconds: sceneEnd,
+      cueShots,
+    }
+
+    timelineCursor = sceneEnd
+    return cueScene
+  })
+
+  const plannedRuntimeSeconds = scenes.length > 0 ? scenes[scenes.length - 1].endSeconds : 0
+  const targetRuntimeSeconds = project.inputs.runtimeSeconds
+  const cueSummary = [
+    `${project.title || 'Untitled music video'} cue sheet`,
+    `${scenes.length} scene(s), ${totalShotCount} shot(s), planned runtime ${formatMinutes(plannedRuntimeSeconds)}`,
+    `Target runtime ${formatMinutes(targetRuntimeSeconds)} · status ${project.status || 'draft'}`,
+  ].join(' · ')
+
+  const textLines = [
+    `${project.title || 'Untitled music video'} cue sheet`,
+    `Status: ${project.status || 'draft'}`,
+    `Target runtime: ${formatMinutes(targetRuntimeSeconds)}`,
+    `Planned runtime: ${formatMinutes(plannedRuntimeSeconds)}`,
+    `Scene count: ${scenes.length}`,
+    `Shot count: ${totalShotCount}`,
+    '',
+    ...scenes.flatMap((scene, index) => [
+      `Scene ${index + 1} | ${formatMinutes(scene.startSeconds)}-${formatMinutes(scene.endSeconds)} | ${scene.section || 'Section'} | ${scene.title}`,
+      `  Location: ${scene.location || 'TBD'} | Camera energy: ${scene.cameraEnergy || 'TBD'} | Performance focus: ${scene.performanceFocus || 'TBD'}`,
+      `  Summary: ${scene.summary || 'No scene summary recorded yet.'}`,
+      ...scene.cueShots.map(
+        (shot, shotIndex) =>
+          `    Shot ${shotIndex + 1} | ${formatMinutes(shot.startSeconds)}-${formatMinutes(shot.endSeconds)} | ${shot.label} | ${shot.subject || 'Subject TBD'}${shot.cameraMove ? ` | ${shot.cameraMove}` : ''}`,
+      ),
+      '',
+    ]),
+    `Notes: ${project.notes.length > 0 ? project.notes.join(' | ') : 'No working notes yet.'}`,
+  ]
+
+  return {
+    scenes,
+    plannedRuntimeSeconds,
+    targetRuntimeSeconds,
+    totalShotCount,
+    text: textLines.join('\n'),
+    summary: cueSummary,
+  }
 }
 
 type SceneEditorProps = {

@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
+  buildMusicVideoEditList,
   exportProjectPackage,
   formatMinutes,
   parseProjectPackage,
@@ -81,6 +82,7 @@ function App() {
   }, [project])
 
   const cueSheet = useMemo(() => buildCueSheet(project), [project])
+  const editList = useMemo(() => buildMusicVideoEditList(project), [project])
 
   const addScene = () => {
     updateProject((current) => ({
@@ -223,6 +225,30 @@ function App() {
     }
   }
 
+  const handleCopyEditList = async () => {
+    try {
+      await copyTextToClipboard(JSON.stringify(editList, null, 2))
+      setImportMessage('Copied edit list')
+    } catch (error) {
+      setImportMessage(
+        error instanceof Error ? error.message : 'Copy failed. Check browser clipboard permissions.',
+      )
+    }
+  }
+
+  const handleDownloadEditList = () => {
+    const file = new Blob([JSON.stringify(editList, null, 2)], {
+      type: 'application/json;charset=utf-8',
+    })
+    const url = URL.createObjectURL(file)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${project.slug || 'music-video'}-edit-list.json`
+    link.click()
+    URL.revokeObjectURL(url)
+    setImportMessage('Downloaded edit list')
+  }
+
   const handleImport = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) {
@@ -299,8 +325,23 @@ function App() {
             <button className="secondary" onClick={handleCopyCueSheet}>
               Copy Cue Sheet
             </button>
+            <button className="secondary" onClick={handleCopyEditList}>
+              Copy Edit List
+            </button>
+            <button className="secondary" onClick={handleDownloadEditList}>
+              Download Edit List
+            </button>
           </div>
         </div>
+        <ul className="edit-checklist" aria-label="Delivery checklist">
+          {editList.checklist.map((item) => (
+            <li key={item.id}>
+              <strong>{item.ok ? 'Ready' : 'Needs work'}</strong>
+              <span>{item.label}</span>
+              <span>{item.detail}</span>
+            </li>
+          ))}
+        </ul>
         <div className="cue-stats">
           <MetricCard label="Planned runtime" value={formatMinutes(cueSheet.plannedRuntimeSeconds)} />
           <MetricCard label="Target runtime" value={formatMinutes(cueSheet.targetRuntimeSeconds)} />

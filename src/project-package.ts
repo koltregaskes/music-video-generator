@@ -231,3 +231,153 @@ export function formatMinutes(totalSeconds: number) {
   const seconds = String(totalSeconds % 60).padStart(2, '0')
   return `${minutes}:${seconds}`
 }
+
+export type MusicVideoEditListChecklistItem = {
+  id: 'bpm-range' | 'key-signature' | 'shot-subject' | 'shot-prompt' | 'runtime-match'
+  label: string
+  ok: boolean
+  detail: string
+}
+
+export type MusicVideoEditListShot = {
+  sceneId: string
+  sceneTitle: string
+  section: string
+  shotId: string
+  label: string
+  startSeconds: number
+  endSeconds: number
+  timecode: string
+  subject: string
+  cameraMove: string
+  prompt: string
+}
+
+export type MusicVideoEditList = {
+  formatVersion: 'music-video-edit-list-v1'
+  title: string
+  slug: string
+  status: string
+  bpm: number
+  keySignature: string
+  aspectRatio: string
+  targetRuntimeSeconds: number
+  plannedRuntimeSeconds: number
+  shots: MusicVideoEditListShot[]
+  promptBatch: { shotId: string; label: string; timecode: string; prompt: string }[]
+  checklist: MusicVideoEditListChecklistItem[]
+  ready: boolean
+}
+
+export function buildMusicVideoEditList(project: MusicVideoProjectPackage): MusicVideoEditList {
+  let timelineCursor = 0
+  const shots: MusicVideoEditListShot[] = []
+
+  for (const scene of project.scenes) {
+    const sceneShotDurationSeconds = scene.shots.reduce(
+      (sum, shot) => sum + Math.max(shot.durationSeconds || 0, 0),
+      0,
+    )
+    const sceneDurationSeconds = Math.max(scene.durationSeconds || 0, sceneShotDurationSeconds)
+    let shotCursor = timelineCursor
+
+    for (const shot of scene.shots) {
+      const shotDuration = Math.max(shot.durationSeconds || 0, 1)
+      const startSeconds = shotCursor
+      const endSeconds = startSeconds + shotDuration
+
+      shots.push({
+        sceneId: scene.id,
+        sceneTitle: scene.title,
+        section: scene.section,
+        shotId: shot.id,
+        label: shot.label,
+        startSeconds,
+        endSeconds,
+        timecode: `${formatMinutes(startSeconds)}-${formatMinutes(endSeconds)}`,
+        subject: shot.subject.trim(),
+        cameraMove: shot.cameraMove.trim(),
+        prompt: shot.prompt.trim(),
+      })
+      shotCursor = endSeconds
+    }
+
+    timelineCursor = Math.max(timelineCursor + sceneDurationSeconds, shotCursor)
+  }
+
+  const plannedRuntimeSeconds = project.scenes.length > 0 ? timelineCursor : 0
+  const targetRuntimeSeconds = project.inputs.runtimeSeconds
+  const missingSubject = shots.filter((shot) => !shot.subject)
+  const missingPrompt = shots.filter((shot) => !shot.prompt)
+  const bpm = project.inputs.bpm
+  const keySignature = project.inputs.keySignature.trim()
+  const runtimeDelta = plannedRuntimeSeconds - targetRuntimeSeconds
+  const bpmOk = Number.isFinite(bpm) && bpm >= 40 && bpm <= 220
+
+  const checklist: MusicVideoEditListChecklistItem[] = [
+    {
+      id: 'bpm-range',
+      label: 'BPM is in a usable range',
+      ok: bpmOk,
+      detail: bpmOk ? `${bpm} BPM` : `${bpm} BPM is outside 40–220`,
+    },
+    {
+      id: 'key-signature',
+      label: 'Key signature is set',
+      ok: keySignature.length > 0,
+      detail: keySignature || 'Key signature is empty',
+    },
+    {
+      id: 'shot-subject',
+      label: 'Every shot has a subject',
+      ok: shots.length > 0 && missingSubject.length === 0,
+      detail:
+        shots.length === 0
+          ? 'No shots yet'
+          : missingSubject.length === 0
+            ? `${shots.length} shots named`
+            : `${missingSubject.length} shot${missingSubject.length === 1 ? '' : 's'} missing a subject`,
+    },
+    {
+      id: 'shot-prompt',
+      label: 'Every shot has a prompt',
+      ok: shots.length > 0 && missingPrompt.length === 0,
+      detail:
+        shots.length === 0
+          ? 'No shots yet'
+          : missingPrompt.length === 0
+            ? `${shots.length} prompts ready`
+            : `${missingPrompt.length} shot${missingPrompt.length === 1 ? '' : 's'} missing a prompt`,
+    },
+    {
+      id: 'runtime-match',
+      label: 'Planned runtime matches the target',
+      ok: plannedRuntimeSeconds === targetRuntimeSeconds,
+      detail:
+        plannedRuntimeSeconds === targetRuntimeSeconds
+          ? formatMinutes(plannedRuntimeSeconds)
+          : `Planned ${formatMinutes(plannedRuntimeSeconds)} vs target ${formatMinutes(targetRuntimeSeconds)} (${runtimeDelta > 0 ? '+' : ''}${runtimeDelta}s)`,
+    },
+  ]
+
+  return {
+    formatVersion: 'music-video-edit-list-v1',
+    title: project.title,
+    slug: project.slug,
+    status: project.status,
+    bpm,
+    keySignature,
+    aspectRatio: project.inputs.aspectRatio,
+    targetRuntimeSeconds,
+    plannedRuntimeSeconds,
+    shots,
+    promptBatch: shots.map((shot) => ({
+      shotId: shot.shotId,
+      label: shot.label,
+      timecode: shot.timecode,
+      prompt: shot.prompt,
+    })),
+    checklist,
+    ready: checklist.every((item) => item.ok),
+  }
+}

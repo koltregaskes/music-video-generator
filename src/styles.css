@@ -166,6 +166,25 @@ button.tiny {
   margin-bottom: 1.25rem;
 }
 
+.edit-checklist {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.edit-checklist li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.8rem;
+  align-items: baseline;
+}
+
+.edit-checklist strong {
+  min-width: 6.5rem;
+}
+
 .panel-full {
   grid-column: 1 / -1;
 }

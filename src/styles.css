@@ -451,6 +451,17 @@ button.tiny {
     padding-top: 1rem;
   }
 
+  .panel-heading,
+  .stack-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero-actions,
+  .inline-actions {
+    width: 100%;
+  }
+
   .hero-copy,
   .metric-grid,
   .panel {

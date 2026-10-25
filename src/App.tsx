@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
   exportProjectPackage,
   formatMinutes,
+  nonNegativeNumber,
   parseProjectPackage,
   slugify,
   type MusicVideoProjectPackage,
@@ -62,9 +63,9 @@ function App() {
     persist(updater(project))
   }
 
+  const cueSheet = useMemo(() => buildCueSheet(project), [project])
+
   const metrics = useMemo(() => {
-    const runtimeSeconds = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0)
-    const shotCount = project.scenes.reduce((sum, scene) => sum + scene.shots.length, 0)
     const locations = new Set(
       project.scenes
         .map((scene) => scene.location.trim())
@@ -73,14 +74,12 @@ function App() {
     )
 
     return {
-      runtimeSeconds,
-      shotCount,
+      runtimeSeconds: cueSheet.plannedRuntimeSeconds,
+      shotCount: cueSheet.totalShotCount,
       locations: locations.size,
       deliverables: project.outputs.length,
     }
-  }, [project])
-
-  const cueSheet = useMemo(() => buildCueSheet(project), [project])
+  }, [cueSheet, project])
 
   const addScene = () => {
     updateProject((current) => ({
@@ -140,6 +139,21 @@ function App() {
             }
           : scene,
       ),
+      updatedAt: new Date().toISOString(),
+    }))
+  }
+
+  const removeShot = (sceneId: string, shotId: string) => {
+    updateProject((current) => ({
+      ...current,
+      scenes: current.scenes.map((scene) => {
+        if (scene.id !== sceneId) {
+          return scene
+        }
+
+        const shots = scene.shots.filter((shot) => shot.id !== shotId)
+        return { ...scene, shots, shotCount: shots.length }
+      }),
       updatedAt: new Date().toISOString(),
     }))
   }
@@ -330,8 +344,7 @@ function App() {
                   <span>{formatMinutes(scene.shotDurationSeconds)} shots</span>
                   {scene.timingDeltaSeconds !== 0 ? (
                     <span className={scene.timingDeltaSeconds > 0 ? 'cue-delta cue-delta--long' : 'cue-delta cue-delta--short'}>
-                      {scene.timingDeltaSeconds > 0 ? '+' : ''}
-                      {formatMinutes(Math.abs(scene.timingDeltaSeconds))} timing delta
+                      {formatSignedMinutes(scene.timingDeltaSeconds)} timing delta
                     </span>
                   ) : null}
                 </div>
@@ -415,7 +428,7 @@ function App() {
               onChange={(value) =>
                 updateProject((current) => ({
                   ...current,
-                  inputs: { ...current.inputs, runtimeSeconds: Number(value) || 0 },
+                  inputs: { ...current.inputs, runtimeSeconds: nonNegativeNumber(value, 0) },
                   updatedAt: new Date().toISOString(),
                 }))
               }
@@ -427,7 +440,7 @@ function App() {
               onChange={(value) =>
                 updateProject((current) => ({
                   ...current,
-                  inputs: { ...current.inputs, bpm: Number(value) || 0 },
+                  inputs: { ...current.inputs, bpm: nonNegativeNumber(value, 0) },
                   updatedAt: new Date().toISOString(),
                 }))
               }
@@ -439,6 +452,28 @@ function App() {
                 updateProject((current) => ({
                   ...current,
                   inputs: { ...current.inputs, keySignature: value },
+                  updatedAt: new Date().toISOString(),
+                }))
+              }
+            />
+            <Field
+              label="Status"
+              value={project.status}
+              onChange={(value) =>
+                updateProject((current) => ({
+                  ...current,
+                  status: value,
+                  updatedAt: new Date().toISOString(),
+                }))
+              }
+            />
+            <Field
+              label="Aspect ratio"
+              value={project.inputs.aspectRatio}
+              onChange={(value) =>
+                updateProject((current) => ({
+                  ...current,
+                  inputs: { ...current.inputs, aspectRatio: value },
                   updatedAt: new Date().toISOString(),
                 }))
               }
@@ -473,6 +508,17 @@ function App() {
               updateProject((current) => ({
                 ...current,
                 inputs: { ...current.inputs, narrativePremise: value },
+                updatedAt: new Date().toISOString(),
+              }))
+            }
+          />
+          <TextArea
+            label="Audience mood"
+            value={project.inputs.audienceMood}
+            onChange={(value) =>
+              updateProject((current) => ({
+                ...current,
+                inputs: { ...current.inputs, audienceMood: value },
                 updatedAt: new Date().toISOString(),
               }))
             }
@@ -556,6 +602,7 @@ function App() {
                   }))
                 }
                 onAddShot={() => addShot(scene.id)}
+                onRemoveShot={(shotId) => removeShot(scene.id, shotId)}
                 onUpdateShot={(shotId, patch) => updateShot(project, scene.id, shotId, persist, patch)}
               />
             ))}
@@ -819,7 +866,7 @@ function App() {
         ref={fileInputRef}
         className="hidden-file-input"
         type="file"
-        accept="application/json"
+        accept=".json,application/json"
         onChange={handleImport}
       />
     </div>
@@ -850,21 +897,22 @@ function copyTextToClipboard(text: string) {
   return Promise.resolve()
 }
 
+function formatSignedMinutes(totalSeconds: number) {
+  const sign = totalSeconds > 0 ? '+' : totalSeconds < 0 ? '-' : ''
+  return `${sign}${formatMinutes(Math.abs(totalSeconds))}`
+}
+
 function buildCueSheet(project: MusicVideoProjectPackage): CueSheet {
   let timelineCursor = 0
   let totalShotCount = 0
 
   const scenes = project.scenes.map((scene) => {
-    const sceneShotDurationSeconds = scene.shots.reduce(
-      (sum, shot) => sum + Math.max(shot.durationSeconds || 0, 0),
-      0,
-    )
-    const sceneDurationSeconds = Math.max(scene.durationSeconds || 0, sceneShotDurationSeconds)
+    const authoredDurationSeconds = nonNegativeNumber(scene.durationSeconds, 0)
     const cueShots: CueSheetShot[] = []
     let shotCursor = timelineCursor
 
     scene.shots.forEach((shot) => {
-      const shotDuration = Math.max(shot.durationSeconds || 0, 1)
+      const shotDuration = nonNegativeNumber(shot.durationSeconds, 0)
       const shotStart = shotCursor
       const shotEnd = shotStart + shotDuration
 
@@ -879,17 +927,19 @@ function buildCueSheet(project: MusicVideoProjectPackage): CueSheet {
       totalShotCount += 1
     })
 
-    const sceneEnd = Math.max(timelineCursor + sceneDurationSeconds, shotCursor)
-    const timingDeltaSeconds = sceneDurationSeconds - sceneShotDurationSeconds
+    const shotDurationSeconds = shotCursor - timelineCursor
+    const timelineDurationSeconds = Math.max(authoredDurationSeconds, shotDurationSeconds)
+    const sceneEnd = timelineCursor + timelineDurationSeconds
+    const timingDeltaSeconds = authoredDurationSeconds - shotDurationSeconds
 
     const cueScene: CueSheetScene = {
       ...scene,
-      durationSeconds: sceneDurationSeconds,
-      shotDurationSeconds: sceneShotDurationSeconds,
+      durationSeconds: authoredDurationSeconds,
+      shotDurationSeconds,
       shotWindowLabel:
         cueShots.length > 0
           ? `${formatMinutes(cueShots[0].startSeconds)} - ${formatMinutes(cueShots[cueShots.length - 1].endSeconds)}`
-          : formatMinutes(sceneDurationSeconds),
+          : `${formatMinutes(timelineCursor)} - ${formatMinutes(sceneEnd)}`,
       timingDeltaSeconds,
       startSeconds: timelineCursor,
       endSeconds: sceneEnd,
@@ -920,6 +970,11 @@ function buildCueSheet(project: MusicVideoProjectPackage): CueSheet {
       `Scene ${index + 1} | ${formatMinutes(scene.startSeconds)}-${formatMinutes(scene.endSeconds)} | ${scene.section || 'Section'} | ${scene.title}`,
       `  Location: ${scene.location || 'TBD'} | Camera energy: ${scene.cameraEnergy || 'TBD'} | Performance focus: ${scene.performanceFocus || 'TBD'}`,
       `  Summary: ${scene.summary || 'No scene summary recorded yet.'}`,
+      ...(scene.timingDeltaSeconds !== 0
+        ? [
+            `  Timing delta: ${formatSignedMinutes(scene.timingDeltaSeconds)} (scene ${formatMinutes(scene.durationSeconds)}, shots ${formatMinutes(scene.shotDurationSeconds)})`,
+          ]
+        : []),
       ...scene.cueShots.map(
         (shot, shotIndex) =>
           `    Shot ${shotIndex + 1} | ${formatMinutes(shot.startSeconds)}-${formatMinutes(shot.endSeconds)} | ${shot.label} | ${shot.subject || 'Subject TBD'}${shot.cameraMove ? ` | ${shot.cameraMove}` : ''}`,
@@ -945,6 +1000,7 @@ type SceneEditorProps = {
   onChange: (patch: Partial<MusicVideoScene>) => void
   onRemove: () => void
   onAddShot: () => void
+  onRemoveShot: (shotId: string) => void
   onUpdateShot: (shotId: string, patch: Partial<MusicVideoShot>) => void
 }
 
@@ -954,6 +1010,7 @@ function SceneEditor({
   onChange,
   onRemove,
   onAddShot,
+  onRemoveShot,
   onUpdateShot,
 }: SceneEditorProps) {
   return (
@@ -986,7 +1043,7 @@ function SceneEditor({
           label="Duration"
           value={String(scene.durationSeconds)}
           type="number"
-          onChange={(value) => onChange({ durationSeconds: Number(value) || 0 })}
+          onChange={(value) => onChange({ durationSeconds: nonNegativeNumber(value, 0) })}
         />
         <Field label="Location" value={scene.location} onChange={(value) => onChange({ location: value })} />
         <Field
@@ -1016,13 +1073,19 @@ function SceneEditor({
       <div className="shot-grid">
         {scene.shots.map((shot) => (
           <div className="shot-card" key={shot.id}>
+            <div className="stack-header compact">
+              <strong>{shot.label || 'Shot'}</strong>
+              <button className="ghost tiny" onClick={() => onRemoveShot(shot.id)}>
+                Remove Shot
+              </button>
+            </div>
             <div className="field-grid">
               <Field label="Shot label" value={shot.label} onChange={(value) => onUpdateShot(shot.id, { label: value })} />
               <Field
                 label="Duration"
                 value={String(shot.durationSeconds)}
                 type="number"
-                onChange={(value) => onUpdateShot(shot.id, { durationSeconds: Number(value) || 0 })}
+                onChange={(value) => onUpdateShot(shot.id, { durationSeconds: nonNegativeNumber(value, 0) })}
               />
             </div>
             <div className="field-grid">

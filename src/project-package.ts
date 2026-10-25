@@ -111,11 +111,24 @@ function normalizeList(value: unknown) {
     : []
 }
 
+export function nonNegativeNumber(value: unknown, fallback: number) {
+  if (value === undefined || value === null || value === '') {
+    return fallback
+  }
+
+  const parsed = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0
+  }
+
+  return parsed
+}
+
 function createShot(partial?: Partial<MusicVideoShot>): MusicVideoShot {
   return {
     id: partial?.id ?? crypto.randomUUID(),
     label: partial?.label ?? 'New shot',
-    durationSeconds: partial?.durationSeconds ?? 4,
+    durationSeconds: nonNegativeNumber(partial?.durationSeconds, 4),
     cameraMove: partial?.cameraMove ?? '',
     subject: partial?.subject ?? '',
     prompt: partial?.prompt ?? '',
@@ -132,8 +145,8 @@ function createScene(partial?: Partial<MusicVideoScene>): MusicVideoScene {
     section: partial?.section ?? 'Verse',
     beatWindow: partial?.beatWindow ?? '',
     summary: partial?.summary ?? '',
-    durationSeconds: partial?.durationSeconds ?? 12,
-    shotCount: partial?.shotCount ?? (shots.length || 3),
+    durationSeconds: nonNegativeNumber(partial?.durationSeconds, 12),
+    shotCount: shots.length,
     location: partial?.location ?? '',
     visualStyle: partial?.visualStyle ?? '',
     performanceFocus: partial?.performanceFocus ?? '',
@@ -165,6 +178,8 @@ export function createMusicVideoProject(
     cast: [] as string[],
     ...(partial?.inputs ?? {}),
   }
+  inputs.runtimeSeconds = nonNegativeNumber(inputs.runtimeSeconds, 180)
+  inputs.bpm = nonNegativeNumber(inputs.bpm, 120)
   inputs.locations = normalizeList(partial?.inputs?.locations)
   inputs.cast = normalizeList(partial?.inputs?.cast)
   const scenes = Array.isArray(partial?.scenes)

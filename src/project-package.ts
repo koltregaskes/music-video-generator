@@ -105,6 +105,10 @@ export function slugify(value: string) {
     .replace(/^-+|-+$/g, '')
 }
 
+function asText(value: unknown) {
+  return typeof value === 'string' ? value : ''
+}
+
 function normalizeList(value: unknown) {
   return Array.isArray(value)
     ? value.map((item) => String(item).trim()).filter(Boolean)
@@ -165,6 +169,7 @@ export function createMusicVideoProject(
     cast: [] as string[],
     ...(partial?.inputs ?? {}),
   }
+  inputs.keySignature = asText(inputs.keySignature)
   inputs.locations = normalizeList(partial?.inputs?.locations)
   inputs.cast = normalizeList(partial?.inputs?.cast)
   const scenes = Array.isArray(partial?.scenes)
@@ -214,6 +219,21 @@ export function parseProjectPackage(raw: string): MusicVideoProjectPackage {
   })
 }
 
+export function loadSavedProject(
+  saved: string | null,
+  fallback: MusicVideoProjectPackage,
+): MusicVideoProjectPackage {
+  if (!saved) {
+    return fallback
+  }
+
+  try {
+    return parseProjectPackage(saved)
+  } catch {
+    return fallback
+  }
+}
+
 export function exportProjectPackage(project: MusicVideoProjectPackage) {
   const file = new Blob([JSON.stringify(project, null, 2)], {
     type: 'application/json;charset=utf-8',
@@ -233,7 +253,13 @@ export function formatMinutes(totalSeconds: number) {
 }
 
 export type MusicVideoEditListChecklistItem = {
-  id: 'bpm-range' | 'key-signature' | 'shot-subject' | 'shot-prompt' | 'runtime-match'
+  id:
+    | 'bpm-range'
+    | 'key-signature'
+    | 'shot-subject'
+    | 'shot-prompt'
+    | 'shot-coverage'
+    | 'runtime-match'
   label: string
   ok: boolean
   detail: string
@@ -253,6 +279,16 @@ export type MusicVideoEditListShot = {
   prompt: string
 }
 
+export type MusicVideoEditListGap = {
+  sceneId: string
+  sceneTitle: string
+  section: string
+  startSeconds: number
+  endSeconds: number
+  durationSeconds: number
+  timecode: string
+}
+
 export type MusicVideoEditList = {
   formatVersion: 'music-video-edit-list-v1'
   title: string
@@ -264,6 +300,7 @@ export type MusicVideoEditList = {
   targetRuntimeSeconds: number
   plannedRuntimeSeconds: number
   shots: MusicVideoEditListShot[]
+  gaps: MusicVideoEditListGap[]
   promptBatch: { shotId: string; label: string; timecode: string; prompt: string }[]
   checklist: MusicVideoEditListChecklistItem[]
   ready: boolean
@@ -272,6 +309,7 @@ export type MusicVideoEditList = {
 export function buildMusicVideoEditList(project: MusicVideoProjectPackage): MusicVideoEditList {
   let timelineCursor = 0
   const shots: MusicVideoEditListShot[] = []
+  const gaps: MusicVideoEditListGap[] = []
 
   for (const scene of project.scenes) {
     const sceneShotDurationSeconds = scene.shots.reduce(
@@ -295,14 +333,28 @@ export function buildMusicVideoEditList(project: MusicVideoProjectPackage): Musi
         startSeconds,
         endSeconds,
         timecode: `${formatMinutes(startSeconds)}-${formatMinutes(endSeconds)}`,
-        subject: shot.subject.trim(),
-        cameraMove: shot.cameraMove.trim(),
-        prompt: shot.prompt.trim(),
+        subject: asText(shot.subject).trim(),
+        cameraMove: asText(shot.cameraMove).trim(),
+        prompt: asText(shot.prompt).trim(),
       })
       shotCursor = endSeconds
     }
 
-    timelineCursor = Math.max(timelineCursor + sceneDurationSeconds, shotCursor)
+    const sceneEndSeconds = Math.max(timelineCursor + sceneDurationSeconds, shotCursor)
+
+    if (shotCursor < sceneEndSeconds) {
+      gaps.push({
+        sceneId: scene.id,
+        sceneTitle: scene.title,
+        section: scene.section,
+        startSeconds: shotCursor,
+        endSeconds: sceneEndSeconds,
+        durationSeconds: sceneEndSeconds - shotCursor,
+        timecode: `${formatMinutes(shotCursor)}-${formatMinutes(sceneEndSeconds)}`,
+      })
+    }
+
+    timelineCursor = sceneEndSeconds
   }
 
   const plannedRuntimeSeconds = project.scenes.length > 0 ? timelineCursor : 0
@@ -310,7 +362,8 @@ export function buildMusicVideoEditList(project: MusicVideoProjectPackage): Musi
   const missingSubject = shots.filter((shot) => !shot.subject)
   const missingPrompt = shots.filter((shot) => !shot.prompt)
   const bpm = project.inputs.bpm
-  const keySignature = project.inputs.keySignature.trim()
+  const keySignature = asText(project.inputs.keySignature).trim()
+  const uncoveredSeconds = gaps.reduce((sum, gap) => sum + gap.durationSeconds, 0)
   const runtimeDelta = plannedRuntimeSeconds - targetRuntimeSeconds
   const bpmOk = Number.isFinite(bpm) && bpm >= 40 && bpm <= 220
 
@@ -350,6 +403,19 @@ export function buildMusicVideoEditList(project: MusicVideoProjectPackage): Musi
             : `${missingPrompt.length} shot${missingPrompt.length === 1 ? '' : 's'} missing a prompt`,
     },
     {
+      id: 'shot-coverage',
+      label: 'Shots cover every scene',
+      ok: project.scenes.length > 0 && gaps.length === 0,
+      detail:
+        project.scenes.length === 0
+          ? 'No scenes yet'
+          : gaps.length === 0
+            ? `${project.scenes.length} scene${project.scenes.length === 1 ? '' : 's'} fully covered`
+            : gaps.length === 1
+              ? `${gaps[0].durationSeconds}s uncovered in ${gaps[0].sceneTitle} (${gaps[0].timecode})`
+              : `${gaps.length} gaps, ${uncoveredSeconds}s uncovered`,
+    },
+    {
       id: 'runtime-match',
       label: 'Planned runtime matches the target',
       ok: plannedRuntimeSeconds === targetRuntimeSeconds,
@@ -371,6 +437,7 @@ export function buildMusicVideoEditList(project: MusicVideoProjectPackage): Musi
     targetRuntimeSeconds,
     plannedRuntimeSeconds,
     shots,
+    gaps,
     promptBatch: shots.map((shot) => ({
       shotId: shot.shotId,
       label: shot.label,

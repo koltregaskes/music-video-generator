@@ -3,6 +3,7 @@ import {
   buildMusicVideoEditList,
   exportProjectPackage,
   formatMinutes,
+  loadSavedProject,
   parseProjectPackage,
   slugify,
   type MusicVideoProjectPackage,
@@ -37,18 +38,9 @@ type CueSheet = {
 }
 
 function App() {
-  const [project, setProject] = useState<MusicVideoProjectPackage>(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY)
-    if (!saved) {
-      return sampleMusicVideoProject
-    }
-
-    try {
-      return parseProjectPackage(saved)
-    } catch {
-      return sampleMusicVideoProject
-    }
-  })
+  const [project, setProject] = useState<MusicVideoProjectPackage>(() =>
+    loadSavedProject(window.localStorage.getItem(STORAGE_KEY), sampleMusicVideoProject),
+  )
   const [importMessage, setImportMessage] = useState('Ready')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
